@@ -1,0 +1,449 @@
+---
+- name: Bootstrapping the Kubernetes Control Plane
+  hosts: k8controllers
+  remote_user: wisccourant
+  become: true
+
+  tasks:
+    - name: Provision the Kubernetes Control Plane
+      block:
+        - name: Download the Kubernetes kube-apiserver
+          ansible.builtin.get_url:
+            url: "https://dl.k8s.io/v1.32.1/bin/linux/amd64/kube-apiserver"
+            dest: /home/wisccourant/
+            mode: '0755'
+          register: output
+
+        - name: Print cfssl information from the previous task
+          ansible.builtin.debug:
+            var: output
+            verbosity: 0
+
+        - name: Download the Kubernetes controller-manager
+          ansible.builtin.get_url:
+            url: "https://dl.k8s.io/v1.32.1/bin/linux/amd64/kube-controller-manager"
+            dest: /home/wisccourant/
+            mode: '0755'
+          register: output
+
+        - name: Print cfssl information from the previous task
+          ansible.builtin.debug:
+            var: output
+            verbosity: 0
+
+        - name: Download the Kubernetes kube-scheduler
+          ansible.builtin.get_url:
+            url: "https://dl.k8s.io/v1.32.1/bin/linux/amd64/kube-scheduler"
+            dest: /home/wisccourant/
+            mode: '0755'
+          register: output
+
+        - name: Print cfssl information from the previous task
+          ansible.builtin.debug:
+            var: output
+            verbosity: 0
+
+        - name: Download the Kubernetes kubectl
+          ansible.builtin.get_url:
+            url: "https://dl.k8s.io/v1.32.1/bin/linux/amd64/kubectl"
+            dest: /home/wisccourant/
+            mode: '0755'
+          register: output
+
+        - name: Print cfssl information from the previous task
+          ansible.builtin.debug:
+            var: output
+            verbosity: 0
+
+        - name: Make binaries executable
+          ansible.builtin.command:
+            cmd: chmod +x kube-apiserver kube-controller-manager kube-scheduler kubectl
+            chdir: /home/wisccourant/
+          changed_when: false
+
+        - name: Move binaries to bin directory
+          ansible.builtin.command:
+            cmd: sudo mv kube-apiserver kube-controller-manager kube-scheduler kubectl /usr/local/bin/
+            chdir: /home/wisccourant/
+          changed_when: false
+
+        - name: Configure the Kubernetes API Server
+          ansible.builtin.command:
+            cmd: sudo mkdir -p /var/lib/kubernetes/
+            chdir: /home/wisccourant/
+          changed_when: false
+
+        - name: Download certificates from gcp
+          ansible.builtin.shell: |
+            sudo gsutil cp {{ item.source }} {{ item.dest }}
+          loop:
+            - { source: "gs://kthw-misc/ca.pem", dest: "/var/lib/kubernetes/" }
+            - { source: "gs://kthw-misc/ca-key.pem", dest: "/var/lib/kubernetes/" }
+            - { source: "gs://kthw-misc/kubernetes-key.pem", dest: "/var/lib/kubernetes/" }
+            - { source: "gs://kthw-misc/kubernetes.pem", dest: "/var/lib/kubernetes/" }
+            - { source: "gs://kthw-misc/encryption-config.yaml", dest: "/var/lib/kubernetes/" }
+            - { source: "gs://kthw-misc/controller-manager.pem", dest: "/var/lib/kubernetes/" }
+            - { source: "gs://kthw-misc/controller-manager-key.pem", dest: "/var/lib/kubernetes/" }
+            - { source: "gs://kthw-misc/scheduler.pem", dest: "/var/lib/kubernetes/" }
+            - { source: "gs://kthw-misc/scheduler-key.pem", dest: "/var/lib/kubernetes/" }
+            - { source: "gs://kthw-misc/static_ip.txt", dest: "/var/lib/kubernetes/" }
+            - { source: "gs://kthw-misc/nginx.conf", dest: "/etc/nginx/" }
+            - { source: "gs://kthw-misc/service-account.pem", dest: "/var/lib/kubernetes/" }
+            - { source: "gs://kthw-misc/service-account-key.pem", dest: "/var/lib/kubernetes/" }
+            - { source: "gs://kthw-misc/admin.pem", dest: "/var/lib/kubernetes/" }
+            - { source: "gs://kthw-misc/admin-key.pem", dest: "/var/lib/kubernetes/" }
+          changed_when: false
+          register: status
+
+        - name: Verify cmd process sucessfully
+          ansible.builtin.debug:
+            var: status
+            verbosity: 0
+
+        - name: Get the main IP address
+          ansible.builtin.command:
+            cmd: hostname -I
+          register: ip_address
+          changed_when: false
+
+        - name: Verify cmd process sucessfully
+          ansible.builtin.debug:
+            var: ip_address
+            verbosity: 0
+
+        - name: Read the IP address from the text file
+          ansible.builtin.command:
+            cmd: cat /var/lib/kubernetes/static_ip.txt
+            chdir: /var/lib/kubernetes/
+          register: kubernetes_public_address
+          changed_when: false
+
+        - name: Verify that the IP address was retrieved
+          ansible.builtin.assert:
+            that:
+              - kubernetes_public_address.stdout | length > 0  # Ensures the content is not empty
+            msg: "No IP address was retrieved from the file."
+
+        - name: Use the IP address
+          ansible.builtin.debug:
+            msg: "The extracted IP address is: {{ kubernetes_public_address.stdout }}"
+
+        - name: Generate kubeconfig file for admin user
+          ansible.builtin.shell: |
+            kubectl config set-cluster kubernetes-the-hard-way \
+              --certificate-authority=/var/lib/kubernetes/ca.pem \
+              --embed-certs=true \
+              --server=https://127.0.0.1:6443 \
+              --kubeconfig=/var/lib/kubernetes/admin.kubeconfig
+          args:
+            chdir: /var/lib/kubernetes/
+          register: status
+          changed_when: false
+
+        - name: Set credentials for admin in kubeconfig
+          ansible.builtin.shell: |
+            kubectl config set-credentials admin \
+              --client-certificate=/var/lib/kubernetes/admin.pem \
+              --client-key=/var/lib/kubernetes/admin-key.pem \
+              --embed-certs=true \
+              --kubeconfig=/var/lib/kubernetes/admin.kubeconfig
+          args:
+            chdir: /var/lib/kubernetes/
+          register: status
+          changed_when: false
+
+        - name: Set context for admin in kubeconfig
+          ansible.builtin.shell: |
+            kubectl config set-context default \
+              --cluster=kubernetes-the-hard-way \
+              --user=admin \
+              --kubeconfig=/var/lib/kubernetes/admin.kubeconfig
+          args:
+            chdir: /var/lib/kubernetes/
+          register: status
+          changed_when: false
+
+        - name: Use context for admin kubeconfig
+          ansible.builtin.shell: |
+            kubectl config use-context default --kubeconfig=/var/lib/kubernetes/admin.kubeconfig
+          args:
+            chdir: /var/lib/kubernetes/
+          register: status
+          changed_when: false
+
+        - name: Generate kubeconfig file for controller-manager
+          ansible.builtin.shell: |
+            kubectl config set-cluster kubernetes-the-hard-way \
+              --certificate-authority=/var/lib/kubernetes/ca.pem \
+              --embed-certs=true \
+              --server=https://127.0.0.1:6443 \
+              --kubeconfig=/var/lib/kubernetes/controller-manager.kubeconfig
+          args:
+            chdir: /var/lib/kubernetes/
+          register: status
+          changed_when: false
+
+        - name: Set credentials for controller-manager in kubeconfig
+          ansible.builtin.shell: |
+            kubectl config set-credentials system:kube-controller-manager \
+              --client-certificate=/var/lib/kubernetes/controller-manager.pem \
+              --client-key=/var/lib/kubernetes/controller-manager-key.pem \
+              --embed-certs=true \
+              --kubeconfig=/var/lib/kubernetes/controller-manager.kubeconfig
+          args:
+            chdir: /var/lib/kubernetes/
+          register: status
+          changed_when: false
+
+        - name: Set context for controller-manager in kubeconfig
+          ansible.builtin.shell: |
+            kubectl config set-context default \
+              --cluster=kubernetes-the-hard-way \
+              --user=system:kube-controller-manager \
+              --kubeconfig=/var/lib/kubernetes/controller-manager.kubeconfig
+          args:
+            chdir: /var/lib/kubernetes/
+          register: status
+          changed_when: false
+
+        - name: Use context for controller-manager kubeconfig
+          ansible.builtin.shell: |
+            kubectl config use-context default --kubeconfig=/var/lib/kubernetes/controller-manager.kubeconfig
+          args:
+            chdir: /var/lib/kubernetes/
+          register: status
+          changed_when: false
+
+        - name: Generate kubeconfig file for scheduler
+          ansible.builtin.shell: |
+            kubectl config set-cluster kubernetes-the-hard-way \
+              --certificate-authority=/var/lib/kubernetes/ca.pem \
+              --embed-certs=true \
+              --server=https://127.0.0.1:6443 \
+              --kubeconfig=/var/lib/kubernetes/scheduler.kubeconfig
+          args:
+            chdir: /var/lib/kubernetes/
+          register: status
+          changed_when: false
+
+        - name: Set credentials for scheduler in kubeconfig
+          ansible.builtin.shell: |
+            kubectl config set-credentials system:kube-scheduler \
+              --client-certificate=/var/lib/kubernetes/scheduler.pem \
+              --client-key=/var/lib/kubernetes/scheduler-key.pem \
+              --embed-certs=true \
+              --kubeconfig=/var/lib/kubernetes/scheduler.kubeconfig
+          args:
+            chdir: /var/lib/kubernetes/
+          register: status
+          changed_when: false
+
+        - name: Set context for scheduler in kubeconfig
+          ansible.builtin.shell: |
+            kubectl config set-context default \
+              --cluster=kubernetes-the-hard-way \
+              --user=system:kube-scheduler  \
+              --kubeconfig=/var/lib/kubernetes/scheduler.kubeconfig
+          args:
+            chdir: /var/lib/kubernetes/
+          register: status
+          changed_when: false
+
+        - name: Use context for scheduler kubeconfig
+          ansible.builtin.shell: |
+            kubectl config use-context default --kubeconfig=/var/lib/kubernetes/scheduler.kubeconfig
+          args:
+            chdir: /var/lib/kubernetes/
+          register: status
+          changed_when: false
+
+        - name: Create the kube-apiserver.service systemd unit file
+          ansible.builtin.shell: |
+            cat > kube-apiserver.service <<EOF
+            [Unit]
+            Description=Kubernetes API Server
+            Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+
+            [Service]
+            ExecStart=/usr/local/bin/kube-apiserver \\
+              --enable-admission-plugins=NamespaceLifecycle,NodeRestriction,LimitRanger,ServiceAccount,DefaultStorageClass,ResourceQuota \\
+              --advertise-address={{ ip_address.stdout | trim }} \\
+              --allow-privileged=true \\
+              --apiserver-count=3 \\
+              --audit-log-maxage=30 \\
+              --audit-log-maxbackup=3 \\
+              --audit-log-maxsize=100 \\
+              --audit-log-path=/var/log/audit.log \\
+              --authorization-mode=Node,RBAC \\
+              --bind-address=0.0.0.0 \\
+              --client-ca-file=/var/lib/kubernetes/ca.pem \\
+              --etcd-cafile=/var/lib/kubernetes/ca.pem \\
+              --etcd-certfile=/var/lib/kubernetes/kubernetes.pem \\
+              --etcd-keyfile=/var/lib/kubernetes/kubernetes-key.pem \\
+              --etcd-servers=https://10.240.0.10:2379,https://10.240.0.11:2379,https://10.240.0.12:2379 \\
+              --event-ttl=1h \\
+              --encryption-provider-config=/var/lib/kubernetes/encryption-config.yaml \\
+              --kubelet-certificate-authority=/var/lib/kubernetes/ca.pem \\
+              --kubelet-client-certificate=/var/lib/kubernetes/kubernetes.pem \\
+              --kubelet-client-key=/var/lib/kubernetes/kubernetes-key.pem \\
+              --runtime-config=api/all=true \\
+              --service-account-key-file=/var/lib/kubernetes/service-account.pem \\
+              --service-account-signing-key-file=/var/lib/kubernetes/service-account-key.pem \\
+              --service-account-issuer=https://{{ kubernetes_public_address.stdout | trim }}:6443 \\
+              --service-cluster-ip-range=10.32.0.0/24 \\
+              --service-node-port-range=30000-32767 \\
+              --tls-cert-file=/var/lib/kubernetes/kubernetes.pem \\
+              --tls-private-key-file=/var/lib/kubernetes/kubernetes-key.pem \\
+              --v=2
+            Restart=on-failure
+            RestartSec=5
+
+            [Install]
+            WantedBy=multi-user.target
+
+            EOF
+          args:
+            chdir: /home/wisccourant/
+          register: status
+          changed_when: false
+
+        - name: Verify cmd process successfully
+          ansible.builtin.debug:
+            var: status
+            verbosity: 0
+
+        - name: Create the kube-controller-manager.service systemd unit file
+          ansible.builtin.shell: |
+            cat > kube-controller-manager.service <<EOF
+            [Unit]
+            Description=Kubernetes Controller Manager
+            Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+
+            [Service]
+            ExecStart=/usr/local/bin/kube-controller-manager \\
+              --bind-address=0.0.0.0 \\
+              --cluster-cidr=10.200.0.0/16 \\
+              --cluster-name=kubernetes \\
+              --cluster-signing-cert-file=/var/lib/kubernetes/ca.pem \\
+              --cluster-signing-key-file=/var/lib/kubernetes/ca-key.pem \\
+              --kubeconfig=/var/lib/kubernetes/controller-manager.kubeconfig \\
+              --leader-elect=true \\
+              --root-ca-file=/var/lib/kubernetes/ca.pem \\
+              --service-account-private-key-file=/var/lib/kubernetes/service-account-key.pem \\
+              --service-cluster-ip-range=10.32.0.0/24 \\
+              --use-service-account-credentials \\
+              --v=2
+            Restart=on-failure
+            RestartSec=5
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+          args:
+            chdir: /home/wisccourant/
+          register: status
+          changed_when: false
+
+        - name: Verify cmd process successfully
+          ansible.builtin.debug:
+            var: status
+            verbosity: 0
+
+        - name: Create the kube-scheduler.service systemd unit file
+          ansible.builtin.shell: |
+            cat > kube-scheduler.service <<EOF
+            [Unit]
+            Description=Kubernetes Scheduler
+            Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+
+            [Service]
+            ExecStart=/usr/local/bin/kube-scheduler \\
+              --kubeconfig=/var/lib/kubernetes/scheduler.kubeconfig \\
+              --leader-elect=true \\
+              --v=2
+            Restart=on-failure
+            RestartSec=5
+
+            [Install]
+            WantedBy=multi-user.target
+            EOF
+          args:
+            chdir: /home/wisccourant/
+          register: status
+          changed_when: false
+
+        - name: Verify cmd process sucessfully
+          ansible.builtin.debug:
+            var: status
+            verbosity: 0
+
+        - name: Move the three service unit files to the /etc/systemd/system/ directory
+          ansible.builtin.command:
+            cmd: sudo mv kube-apiserver.service kube-scheduler.service kube-controller-manager.service /etc/systemd/system/
+            chdir: /home/wisccourant/
+          changed_when: false
+
+        - name: Reload daemon
+          ansible.builtin.command:
+            cmd: sudo systemctl daemon-reload
+            chdir: /home/wisccourant/
+          changed_when: false
+
+        - name: Enable kube-apiserver, kube-controller-manager, and kube-scheduler
+          ansible.builtin.command:
+            cmd: sudo systemctl enable kube-apiserver kube-controller-manager kube-scheduler
+            chdir: /home/wisccourant/
+          changed_when: false
+
+        - name: Start the controller Services
+          ansible.builtin.command:
+            cmd: sudo systemctl start kube-apiserver kube-controller-manager kube-scheduler
+            chdir: /home/wisccourant/
+          changed_when: false
+
+        - name: Pause for 10 seconds
+          ansible.builtin.pause:
+            seconds: 10
+
+        - name: Start the nginx Services
+          ansible.builtin.command:
+            cmd: sudo systemctl start nginx
+            chdir: /home/wisccourant/
+          changed_when: false
+
+        - name: Enable the nginx Services
+          ansible.builtin.command:
+            cmd: sudo systemctl enable nginx
+            chdir: /home/wisccourant/
+
+        - name: Reload the nginx Services
+          ansible.builtin.command:
+            cmd: sudo systemctl reload nginx
+            chdir: /home/wisccourant/
+
+        - name: Restart the nginx Services
+          ansible.builtin.command:
+            cmd: sudo systemctl restart nginx
+            chdir: /home/wisccourant/
+
+        - name: Pause for 10 seconds
+          ansible.builtin.pause:
+            seconds: 10
+
+        - name: Set correct permissions for kubeconfig scheduler
+          ansible.builtin.command:
+            cmd: sudo chmod 644 /var/lib/kubernetes/scheduler.kubeconfig
+          register: chmod_status
+          changed_when: true
+
+        - name: Set correct permissions for kubeconfig admin
+          ansible.builtin.command:
+            cmd: sudo chmod 644 /var/lib/kubernetes/admin.kubeconfig
+          register: chmod_status
+          changed_when: true
+
+        - name: Set correct permissions for kubeconfig controller-manager
+          ansible.builtin.command:
+            cmd: sudo chmod 644 /var/lib/kubernetes/controller-manager.kubeconfig
+          register: chmod_status
+          changed_when: true

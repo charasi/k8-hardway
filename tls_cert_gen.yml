@@ -1,0 +1,486 @@
+---
+- name: Certificate Authority that can be used to generate additional TLS certificates
+  hosts: k8main
+  remote_user: wisccourant
+  become: true
+
+  tasks:
+    - name: Provision CA and generate TLS Certificates
+      block:
+        - name: Create directory certificates
+          ansible.builtin.file:
+            path: /home/wisccourant/certificates/
+            state: directory
+            mode: "0755"
+
+        - name: Download certificates signing requests from gcp
+          ansible.builtin.shell: |
+            sudo gsutil cp {{ item.source }} {{ item.dest }}
+          loop:
+            - { source: "gs://kthw-misc/admin-csr.json", dest: "/home/wisccourant/certificates/" }
+            - { source: "gs://kthw-misc/ca-config.json", dest: "/home/wisccourant/certificates/" }
+            - { source: "gs://kthw-misc/ca-csr.json", dest: "/home/wisccourant/certificates/" }
+            - { source: "gs://kthw-misc/kube-proxy-csr.json", dest: "/home/wisccourant/certificates/" }
+            - { source: "gs://kthw-misc/kubernetes-csr.json", dest: "/home/wisccourant/certificates/" }
+            - { source: "gs://kthw-misc/worker-0-csr.json", dest: "/home/wisccourant/certificates/" }
+            - { source: "gs://kthw-misc/worker-1-csr.json", dest: "/home/wisccourant/certificates/" }
+            - { source: "gs://kthw-misc/worker-2-csr.json", dest: "/home/wisccourant/certificates/" }
+            - { source: "gs://kthw-misc/controller-manager-csr.json", dest: "/home/wisccourant/certificates/" }
+            - { source: "gs://kthw-misc/scheduler-csr.json", dest: "/home/wisccourant/certificates/" }
+            - { source: "gs://kthw-misc/etcd-csr.json", dest: "/home/wisccourant/certificates/" }
+            - { source: "gs://kthw-misc/etcd-client-csr.json", dest: "/home/wisccourant/certificates/" }
+            - { source: "gs://kthw-misc/service-account-csr.json", dest: "/home/wisccourant/certificates/" }
+            - { source: "gs://kthw-misc/service-account-csr.json", dest: "/home/wisccourant/certificates/" }
+            - { source: "gs://kthw-misc/load-balancer-csr.json", dest: "/home/wisccourant/certificates/" }
+            - { source: "gs://kthw-misc/ca-lb-config.json", dest: "/home/wisccourant/certificates/" }
+            - { source: "gs://kthw-misc/ca-lb-csr.json", dest: "/home/wisccourant/certificates/" }
+          changed_when: false
+          register: status
+
+        - name: Generate the CA certificate and private key
+          ansible.builtin.shell: |
+            set -o pipefail
+            sudo cfssl gencert -initca ca-csr.json | sudo cfssljson -bare ca
+          args:
+            executable: /bin/bash
+            chdir: /home/wisccourant/certificates/
+          changed_when: false
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/ca-key.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/ca.pem.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Generate the admin client certificate and private key
+          ansible.builtin.shell: |
+            set -o pipefail
+            sudo cfssl gencert \
+              -ca=ca.pem \
+              -ca-key=ca-key.pem \
+              -config=ca-config.json \
+              -profile=kubernetes \
+              admin-csr.json | sudo cfssljson -bare admin
+          args:
+            executable: /bin/bash
+            chdir: /home/wisccourant/certificates/
+          changed_when: false
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/admin-key.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/admin.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Generate the Controller Manager certificate and private key
+          ansible.builtin.shell: |
+            set -o pipefail
+            sudo cfssl gencert \
+                -ca=ca.pem \
+                -ca-key=ca-key.pem \
+                -config=ca-config.json \
+                -profile=kubernetes \
+                controller-manager-csr.json | cfssljson -bare controller-manager
+          args:
+            executable: /bin/bash
+            chdir: /home/wisccourant/certificates/
+          changed_when: false
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/controller-manager-key.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/controller-manager.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Generate the Service Account certificate and private key
+          ansible.builtin.shell: |
+            set -o pipefail
+            sudo cfssl gencert \
+              -ca=ca.pem \
+              -ca-key=ca-key.pem \
+              -config=ca-config.json \
+              -profile=kubernetes \
+              service-account-csr.json | cfssljson -bare service-account
+          args:
+            executable: /bin/bash
+            chdir: /home/wisccourant/certificates/
+          changed_when: false
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/service-account-key.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/service-account.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Generate the scheduler certificate and private key
+          ansible.builtin.shell: |
+            set -o pipefail
+            sudo cfssl gencert \
+              -ca=ca.pem \
+              -ca-key=ca-key.pem \
+              -config=ca-config.json \
+              -profile=kubernetes \
+              scheduler-csr.json | cfssljson -bare scheduler
+          args:
+            executable: /bin/bash
+            chdir: /home/wisccourant/certificates/
+          changed_when: false
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/scheduler-key.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/scheduler.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Generate the etcd server certificate and private key
+          ansible.builtin.shell: |
+            set -o pipefail
+            sudo cfssl gencert \
+              -ca=ca.pem \
+              -ca-key=ca-key.pem \
+              -config=ca-config.json \
+              -profile=kubernetes \
+              etcd-csr.json | cfssljson -bare etcd
+          args:
+            executable: /bin/bash
+            chdir: /home/wisccourant/certificates/
+          changed_when: false
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/etcd-key.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/etcd.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Generate the etcd-client certificate and private key
+          ansible.builtin.shell: |
+            set -o pipefail
+            sudo cfssl gencert \
+              -ca=ca.pem \
+              -ca-key=ca-key.pem \
+              -config=ca-config.json \
+              -profile=kubernetes \
+              etcd-client-csr.json | cfssljson -bare etcd-client
+          args:
+            executable: /bin/bash
+            chdir: /home/wisccourant/certificates/
+          changed_when: false
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/etcd-client-key.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/etcd-client.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Generate a certificate and private key for each Kubernetes worker node
+          ansible.builtin.shell: |
+            set -o pipefail
+            sudo cfssl gencert \
+              -ca=ca.pem \
+              -ca-key=ca-key.pem \
+              -config=ca-config.json \
+              -hostname={{ item.instance }},{{ item.ip }} \
+              -profile=kubernetes \
+              {{ item.instance }}-csr.json | sudo cfssljson -bare {{ item.instance }}
+          args:
+            executable: /bin/bash
+            chdir: /home/wisccourant/certificates/
+          changed_when: false
+          register: status
+          loop:
+            - { instance: "worker-0", ip: "10.240.0.20" }
+            - { instance: "worker-1", ip: "10.240.0.21" }
+            - { instance: "worker-2", ip: "10.240.0.22" }
+
+        - name: Verify cmd process sucessfully
+          ansible.builtin.debug:
+            var: status
+            verbosity: 0
+
+        - name: Generate the kube-proxy client certificate and private key
+          ansible.builtin.shell: |
+            set -o pipefail
+            sudo cfssl gencert \
+              -ca=ca.pem \
+              -ca-key=ca-key.pem \
+              -config=ca-config.json \
+              -profile=kubernetes \
+              kube-proxy-csr.json | sudo cfssljson -bare kube-proxy
+          args:
+            executable: /bin/bash
+            chdir: /home/wisccourant/certificates/
+          changed_when: false
+
+        - name: Verify cmd process successfully
+          ansible.builtin.debug:
+            var: status
+            verbosity: 0
+
+        - name: Create directory certificates
+          ansible.builtin.file:
+            path: /home/wisccourant/certificates/
+            state: directory
+            mode: "0755"
+
+        - name: Download ip from gcp
+          ansible.builtin.shell: |
+            sudo gsutil cp gs://kthw-misc/static_ip.txt /home/wisccourant/certificates/
+          changed_when: false
+          register: status
+
+        - name: Verify cmd process sucessfully
+          ansible.builtin.debug:
+            var: status
+            verbosity: 0
+
+        - name: Read the IP address from the text file
+          ansible.builtin.command:
+            cmd: cat /home/wisccourant/certificates/static_ip.txt
+            chdir: /home/wisccourant/certificates/
+          register: kubernetes_public_address
+          changed_when: false
+
+        - name: Verify that the IP address was retrieved
+          ansible.builtin.assert:
+            that:
+              - kubernetes_public_address.stdout | length > 0  # Ensures the content is not empty
+            msg: "No IP address was retrieved from the file."
+
+        - name: Use the IP address
+          ansible.builtin.debug:
+            msg: "The extracted IP address is: {{ kubernetes_public_address.stdout }}"
+
+        - name: Generate the Kubernetes API Server certificate and private key
+          ansible.builtin.shell: |
+            set -o pipefail
+            sudo cfssl gencert \
+              -ca=ca.pem \
+              -ca-key=ca-key.pem \
+              -config=ca-config.json \
+              -hostname=10.32.0.10,10.240.0.10,10.240.0.11,10.240.0.12,10.32.0.1,{{ kubernetes_public_address.stdout | trim }},127.0.0.1,kubernetes,kubernetes.default,kubernetes.default.svc,kubernetes.default.svc.cluster,kubernetes.svc.cluster.local \
+              -profile=kubernetes \
+              kubernetes-csr.json | sudo cfssljson -bare kubernetes
+          args:
+            executable: /bin/bash
+            chdir: /home/wisccourant/certificates/
+          changed_when: false
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/kubernetes-key.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/kubernetes.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Generate the CA certificate and private key for load-balancer
+          ansible.builtin.shell: |
+            set -o pipefail
+            sudo cfssl gencert -initca ca-lb-csr.json | sudo cfssljson -bare ca-lb
+          args:
+            executable: /bin/bash
+            chdir: /home/wisccourant/certificates/
+          changed_when: false
+
+        - name: Generate the load balancer certificate and private key
+          ansible.builtin.shell: |
+            set -o pipefail
+            sudo cfssl gencert \
+                -ca=ca-lb.pem \
+                -ca-key=ca-lb-key.pem \
+                -config=ca-lb-config.json \
+                -profile=load-balancer \
+                load-balancer-csr.json | cfssljson -bare load-balancer
+          args:
+            executable: /bin/bash
+            chdir: /home/wisccourant/certificates/
+          changed_when: false
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/load-balancer-key.pem"
+          register: file_stat
+
+        - name: Display file existence result
+          ansible.builtin.debug:
+            msg: "The file exists"
+          when: file_stat.stat.exists
+
+        - name: Check if the file exists
+          ansible.builtin.stat:
+            path: "/home/wisccourant/certificates/load-balancer.pem"
+          register: file_stat
+
+        - name: Upload worker certificates to gcp
+          ansible.builtin.shell: |
+            sudo gsutil cp {{ item.source }} {{ item.dest }}
+          loop:
+            - { source: "/home/wisccourant/certificates/worker-0-key.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/worker-0.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/worker-1-key.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/worker-1.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/worker-2-key.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/worker-2.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/kube-proxy-key.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/kube-proxy.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/service-account-key.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/service-account.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/load-balancer-key.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/load-balancer.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/ca-lb-key.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/ca-lb.pem", dest: "gs://kthw-misc/" }
+          changed_when: false
+          register: status
+
+        - name: Verify cmd process sucessfully
+          ansible.builtin.debug:
+            var: status
+            verbosity: 0
+
+        - name: Upload Kubernetes certificates to gcp
+          ansible.builtin.shell: |
+            sudo gsutil cp {{ item.source }} {{ item.dest }}
+          loop:
+            - { source: "/home/wisccourant/certificates/kubernetes-key.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/kubernetes.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/admin-key.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/admin.pem", dest: "gs://kthw-misc/" }
+          changed_when: false
+          register: status
+
+        - name: Verify cmd process sucessfully
+          ansible.builtin.debug:
+            var: status
+            verbosity: 0
+
+        - name: Upload kubeconfigs to gcp
+          ansible.builtin.shell: |
+            sudo gsutil cp {{ item.source }} {{ item.dest }}
+          loop:
+            - { source: "/home/wisccourant/certificates/ca.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/ca-key.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/etcd.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/etcd-key.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/etcd-client.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/etcd-client-key.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/scheduler.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/scheduler-key.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/controller-manager.pem", dest: "gs://kthw-misc/" }
+            - { source: "/home/wisccourant/certificates/controller-manager-key.pem", dest: "gs://kthw-misc/" }
+          changed_when: false
+          register: status
+
+        - name: Verify cmd process sucessfully
+          ansible.builtin.debug:
+            var: status
+            verbosity: 0

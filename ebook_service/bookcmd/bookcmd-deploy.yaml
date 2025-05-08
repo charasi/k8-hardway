@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: bookcmd-deploy
+  namespace: bookstore-ns
+spec:
+  selector:
+    matchLabels:
+      app: book-cmd
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        app: book-cmd
+    spec:
+      #priorityClassName: high-priority
+      containers:
+        - name: book-cmd
+          image: charasi/book-cmd:latest
+          ports:
+            - containerPort: 3000
+          env:
+            - name: DB_USER
+              value: remedy
+            - name: DB_PASS
+              value: skincream
+            - name: DB_HOST
+              value: 34.145.15.102
+            - name: DB_PORT
+              value: "3306"
+            - name: DB_BOOKSTORE
+              value: bookstore
+          livenessProbe:
+            httpGet:
+              path: /status
+              port: 3000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            #timeoutSeconds: 5
+            #failureThreshold: 3
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: "kubernetes.io/hostname"
+                    operator: In
+                    values:
+                      - worker-1

@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: bookcmd-svc-lb
+  namespace: bookstore-ns
+spec:
+  type: ClusterIP
+  selector:
+    app: book-cmd
+  ports:
+    - port: 3000
+      targetPort: 3000
+
